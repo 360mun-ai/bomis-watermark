@@ -1,6 +1,6 @@
 {
   "name": "watermark_bomis",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -10,13 +10,20 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "fluent-ffmpeg": "^2.1.3",
+    "googleapis": "^171.4.0",
     "lucide-react": "^0.577.0",
     "next": "16.1.6",
+    "next-themes": "^0.4.6",
+    "p-limit": "^7.3.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "shadcn": "^4.0.1",
+    "sharp": "^0.34.5",
+    "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
     "tw-animate-css": "^1.4.0"
   },
