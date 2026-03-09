@@ -75,7 +75,7 @@ export default function Home() {
       if (res.ok) {
         const data = await res.json();
         setHardwareInfo(data);
-        setThreadCount(data.recommended);
+        // We no longer clamp to CPU recommendation automatically for network tasks
       }
     } catch (err) {
       console.error('Failed to fetch hardware info', err);
@@ -653,22 +653,21 @@ export default function Home() {
                 disabled={isProcessing}
                 className="w-24 h-9 rounded-lg bg-[var(--color-surface-2)] border border-[var(--color-border-subtle)] text-center text-sm font-mono text-[var(--color-text-primary)] focus:outline-none focus:border-[oklch(0.82_0.155_72/60%)] disabled:opacity-50"
               />
-              {hardwareInfo && threadCount !== hardwareInfo.recommended && (
+              {hardwareInfo && threadCount !== 50 && (
                 <Button
                   variant="outline"
                   size="sm"
                   className="text-xs bg-[var(--color-surface-2)] text-[oklch(0.82_0.155_72)] border-[oklch(0.82_0.155_72/30%)] hover:bg-[oklch(0.82_0.155_72/10%)]"
-                  onClick={() => setThreadCount(hardwareInfo!.recommended)}
+                  onClick={() => setThreadCount(50)}
                   disabled={isProcessing}
                 >
-                  Use Recommended
+                  Reset to 50
                 </Button>
               )}
             </div>
             {hardwareInfo && (
               <p className="text-[11px] text-[var(--color-text-muted)] font-mono leading-relaxed">
-                Your device: {hardwareInfo.logicalCores} cores, {hardwareInfo.totalMemoryGB} GB RAM
-                {' \u2192 '}Recommended: {hardwareInfo.recommended} threads (80% utilization)
+                Network Concurrency: Higher is faster for Drive API. Default 50 handles most connections effortlessly regardless of your {hardwareInfo.logicalCores}-core CPU.
               </p>
             )}
           </div>
