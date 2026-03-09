@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
@@ -43,10 +42,21 @@ export default function Home() {
   const [imageErrors, setImageErrors] = useState<any[]>([]);
   const [videoErrors, setVideoErrors] = useState<any[]>([]);
 
+  // Thread / concurrency configuration
+  const [threadCount, setThreadCount] = useState<number>(50);
+  const [hardwareInfo, setHardwareInfo] = useState<{
+    logicalCores: number;
+    totalMemoryGB: number;
+    recommended: number;
+    cpuModel: string;
+    platform: string;
+  } | null>(null);
+
   // Check auth and load folders on mount
   useEffect(() => {
     checkAuthAndLoadFolders();
     fetchVideoQueue();
+    fetchHardwareInfo();
 
     // Check URL for auth success/error
     const urlParams = new URLSearchParams(window.location.search);
@@ -58,6 +68,19 @@ export default function Home() {
       toast.error('Authentication failed. Please try again.');
     }
   }, []);
+
+  const fetchHardwareInfo = async () => {
+    try {
+      const res = await fetch('/api/hardware');
+      if (res.ok) {
+        const data = await res.json();
+        setHardwareInfo(data);
+        setThreadCount(data.recommended);
+      }
+    } catch (err) {
+      console.error('Failed to fetch hardware info', err);
+    }
+  };
 
   const checkAuthAndLoadFolders = async () => {
     setIsLoadingFolders(true);
@@ -180,7 +203,7 @@ export default function Home() {
       const response = await fetch(`/api/process`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sourceId, destId, applyTrim }),
+        body: JSON.stringify({ sourceId, destId, applyTrim, concurrency: threadCount }),
         signal: controller.signal
       });
       if (!response.body) {
@@ -196,7 +219,6 @@ export default function Home() {
         done = readerDone;
         if (value) {
           const chunk = decoder.decode(value);
-          // Streams can pass multiple data lines in one chunk, parse them
           const lines = chunk.split('\n');
           for (const line of lines) {
             if (line.startsWith('data: ')) {
@@ -281,7 +303,7 @@ export default function Home() {
       const response = await fetch(`/api/process`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sourceId, destId, applyTrim, specificFiles: filesToRetry }),
+        body: JSON.stringify({ sourceId, destId, applyTrim, specificFiles: filesToRetry, concurrency: threadCount }),
         signal: controller.signal
       });
       if (!response.body) {
@@ -433,15 +455,13 @@ export default function Home() {
                 } else if (data.status === 'processing' || data.status === 'complete') {
                   setVideoProgress(data.progress);
 
-                  // Assume video process API might be updated later to send errorFiles as well
                   if (data.errorFiles && data.errorFiles.length > 0) {
                     setVideoErrors(data.errorFiles);
                   }
 
                   setVideoStatusText(`Processed: ${data.processed}/${data.total} (Errors: ${data.errors || 0})`);
-                  fetchVideoQueue(); // keep UI up to date with dequeue
+                  fetchVideoQueue();
 
-                  // Calculate ETA
                   if (data.status === 'processing' && data.processed > 0 && data.total > data.processed) {
                     const elapsed = Date.now() - startTime;
                     const msPerItem = elapsed / data.processed;
@@ -478,101 +498,199 @@ export default function Home() {
     }
   };
 
+  /* ─────────────────────────── Loading State ─────────────────────────── */
   if (isAuthenticated === null) {
-    return <div className="flex h-screen items-center justify-center"><p>Loading...</p></div>;
-  }
-
-  if (!isAuthenticated) {
     return (
-      <div className="flex h-screen items-center justify-center bg-zinc-950 p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle>Google Drive Watermark tool</CardTitle>
-            <CardDescription>Automate watermarking for hundreds of images locally.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground mb-4">
-              To begin, you need to authorize this app to read and write to your Google Drive.
-              Tokens will be saved locally on your machine.
-            </p>
-          </CardContent>
-          <CardFooter>
-            <Button className="w-full" onClick={handleLogin}>Sign in with Google</Button>
-          </CardFooter>
-        </Card>
+      <div className="canvas-bg flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4 animate-fade-up">
+          <div className="w-10 h-10 border-2 border-[oklch(0.82_0.155_72)] border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-[var(--color-text-muted)] tracking-wide uppercase">Initializing</p>
+        </div>
       </div>
     );
   }
 
+  /* ─────────────────────────── Login Screen ─────────────────────────── */
+  if (!isAuthenticated) {
+    return (
+      <div className="canvas-bg flex items-center justify-center p-4">
+        <div className="card-panel accent-top w-full max-w-md animate-fade-up">
+          <div className="relative z-10 p-8 flex flex-col items-center text-center">
+            {/* Icon mark */}
+            <div className="w-14 h-14 rounded-2xl bg-[oklch(0.82_0.155_72/12%)] border border-[oklch(0.82_0.155_72/25%)] flex items-center justify-center mb-6">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="oklch(0.82 0.155 72)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <path d="M2 17l10 5 10-5" />
+                <path d="M2 12l10 5 10-5" />
+              </svg>
+            </div>
+
+            <h1 className="text-2xl font-semibold shimmer-text mb-2">
+              BOMIS Watermark Studio
+            </h1>
+            <p className="text-sm text-[var(--color-text-muted)] mb-8 max-w-xs leading-relaxed">
+              Automate watermarking for hundreds of images locally.
+              Tokens are saved on your machine — nothing leaves this device.
+            </p>
+
+            <Button
+              className="w-full h-10 sheen glow-accent text-sm font-semibold tracking-wide"
+              onClick={handleLogin}
+            >
+              Sign in with Google
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ─────────────────────────── Main Dashboard ─────────────────────────── */
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-950 p-4">
-      <Card className="w-full max-w-2xl bg-zinc-900 border-zinc-800">
-        <CardHeader>
-          <CardTitle className="text-2xl text-zinc-100">BOMIS Watermarker</CardTitle>
-          <CardDescription className="text-zinc-400">Select Google Drive folders to process</CardDescription>
-        </CardHeader>
+    <div className="canvas-bg p-4 md:p-8 flex flex-col items-center gap-6">
 
-        <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-200">Source Folder</label>
-            <Select disabled={isLoadingFolders || isProcessing} onValueChange={(val: any) => setSourceId(val || '')}>
-              <SelectTrigger className="bg-zinc-800 border-zinc-700 text-zinc-100">
-                <SelectValue placeholder="Select source folder..." />
-              </SelectTrigger>
-              <SelectContent className="bg-zinc-800 border-zinc-700 max-h-80">
-                {folders.map((f) => (
-                  <SelectItem key={f.id} value={f.id} className="text-zinc-100 focus:bg-zinc-700 cursor-pointer">
-                    {f.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      {/* ── Header ── */}
+      <header className="w-full max-w-2xl animate-fade-up">
+        <h1 className="text-3xl font-bold text-gold tracking-tight">
+          BOMIS Watermarker
+        </h1>
+        <p className="text-sm text-[var(--color-text-muted)] mt-1">
+          Select Google Drive folders to process
+        </p>
+        <hr className="rule-accent mt-4" />
+      </header>
+
+      {/* ══════════════ IMAGE PROCESSING PANEL ══════════════ */}
+      <section className="card-panel accent-top w-full max-w-2xl animate-fade-up-delay-1">
+        <div className="relative z-10 p-6 md:p-8 space-y-6">
+
+          {/* Section label */}
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-[oklch(0.82_0.155_72/10%)] border border-[oklch(0.82_0.155_72/20%)] flex items-center justify-center flex-shrink-0">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.82 0.155 72)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <polyline points="21 15 16 10 5 21" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">
+                Image Processing
+              </h2>
+              <p className="text-xs text-[var(--color-text-muted)]">Batch watermark with sharp</p>
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-200">Destination Folder</label>
-            <Select disabled={isLoadingFolders || isProcessing} onValueChange={(val: any) => setDestId(val || '')}>
-              <SelectTrigger className="bg-zinc-800 border-zinc-700 text-zinc-100">
-                <SelectValue placeholder="Select destination folder..." />
-              </SelectTrigger>
-              <SelectContent className="bg-zinc-800 border-zinc-700 max-h-80">
-                {folders.map((f) => (
-                  <SelectItem key={f.id} value={f.id} className="text-zinc-100 focus:bg-zinc-700 cursor-pointer">
-                    {f.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          {/* Folder selectors */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
+                Source Folder
+              </label>
+              <Select disabled={isLoadingFolders || isProcessing} onValueChange={(val: any) => setSourceId(val || '')}>
+                <SelectTrigger className="bg-[var(--color-surface-2)] border-[var(--color-border-subtle)] text-[var(--color-text-primary)] h-10 rounded-lg">
+                  <SelectValue placeholder="Select source..." />
+                </SelectTrigger>
+                <SelectContent className="bg-[var(--color-surface-2)] border-[var(--color-border)] max-h-80">
+                  {folders.map((f) => (
+                    <SelectItem key={f.id} value={f.id} className="text-[var(--color-text-primary)] focus:bg-[var(--color-surface-3)] cursor-pointer">
+                      {f.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
+                Destination Folder
+              </label>
+              <Select disabled={isLoadingFolders || isProcessing} onValueChange={(val: any) => setDestId(val || '')}>
+                <SelectTrigger className="bg-[var(--color-surface-2)] border-[var(--color-border-subtle)] text-[var(--color-text-primary)] h-10 rounded-lg">
+                  <SelectValue placeholder="Select destination..." />
+                </SelectTrigger>
+                <SelectContent className="bg-[var(--color-surface-2)] border-[var(--color-border)] max-h-80">
+                  {folders.map((f) => (
+                    <SelectItem key={f.id} value={f.id} className="text-[var(--color-text-primary)] focus:bg-[var(--color-surface-3)] cursor-pointer">
+                      {f.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
-          <div className="flex items-center space-x-2 pt-2 pb-2">
-            <input
-              type="checkbox"
-              id="applyTrim"
-              checked={applyTrim}
-              onChange={(e) => setApplyTrim(e.target.checked)}
-              className="w-4 h-4 rounded text-zinc-100 bg-zinc-800 border-zinc-700"
-            />
-            <label htmlFor="applyTrim" className="text-sm text-zinc-300 font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-              Apply Auto-Crop (Trims away solid/transparent background edges around subject using sharp)
+          {/* Auto-crop toggle */}
+          <label htmlFor="applyTrim" className="flex items-center gap-3 cursor-pointer group">
+            <div className="relative">
+              <input
+                type="checkbox"
+                id="applyTrim"
+                checked={applyTrim}
+                onChange={(e) => setApplyTrim(e.target.checked)}
+                className="peer sr-only"
+              />
+              <div className="w-9 h-5 rounded-full bg-[var(--color-surface-3)] border border-[var(--color-border)] peer-checked:bg-[oklch(0.82_0.155_72/30%)] peer-checked:border-[oklch(0.82_0.155_72/50%)] transition-colors" />
+              <div className="absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-[var(--color-text-muted)] peer-checked:bg-[oklch(0.82_0.155_72)] peer-checked:translate-x-4 transition-all" />
+            </div>
+            <span className="text-sm text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors">
+              Apply Auto-Crop (trim background edges)
+            </span>
+          </label>
+
+          {/* ── Concurrent Threads ── */}
+          <div className="space-y-3">
+            <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
+              Concurrent Threads
             </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                min={1}
+                max={200}
+                value={threadCount}
+                onChange={(e) => setThreadCount(Math.min(200, Math.max(1, Number(e.target.value) || 1)))}
+                disabled={isProcessing}
+                className="w-24 h-9 rounded-lg bg-[var(--color-surface-2)] border border-[var(--color-border-subtle)] text-center text-sm font-mono text-[var(--color-text-primary)] focus:outline-none focus:border-[oklch(0.82_0.155_72/60%)] disabled:opacity-50"
+              />
+              {hardwareInfo && threadCount !== hardwareInfo.recommended && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs bg-[var(--color-surface-2)] text-[oklch(0.82_0.155_72)] border-[oklch(0.82_0.155_72/30%)] hover:bg-[oklch(0.82_0.155_72/10%)]"
+                  onClick={() => setThreadCount(hardwareInfo!.recommended)}
+                  disabled={isProcessing}
+                >
+                  Use Recommended
+                </Button>
+              )}
+            </div>
+            {hardwareInfo && (
+              <p className="text-[11px] text-[var(--color-text-muted)] font-mono leading-relaxed">
+                Your device: {hardwareInfo.logicalCores} cores, {hardwareInfo.totalMemoryGB} GB RAM
+                {' \u2192 '}Recommended: {hardwareInfo.recommended} threads (80% utilization)
+              </p>
+            )}
           </div>
 
+          {/* ── Progress section ── */}
           {isProcessing && (
-            <div className="space-y-2 pt-4">
-              <div className="flex justify-between text-sm text-zinc-400">
-                <span>Progress</span>
-                <span>{progress}%</span>
+            <div className="space-y-3 pt-2 animate-fade-up">
+              <div className="flex justify-between items-baseline">
+                <span className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Progress</span>
+                <span className="text-sm font-mono font-medium text-[oklch(0.82_0.155_72)]">{progress}%</span>
               </div>
-              <Progress value={progress} className="h-2" />
-              <div className="flex justify-between text-xs text-zinc-500">
-                <span>{statusText}</span>
-                <span>{etaText}</span>
+              <div className="progress-glow">
+                <Progress value={progress} />
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-mono text-[var(--color-text-muted)]">{statusText}</span>
+                <span className="text-xs font-mono text-[oklch(0.82_0.155_72/80%)]">{etaText}</span>
               </div>
               <Button
                 variant="destructive"
                 size="sm"
-                className="w-full mt-2"
+                className="w-full mt-1"
                 onClick={handleCancelImageJob}
               >
                 Stop Job
@@ -580,18 +698,25 @@ export default function Home() {
             </div>
           )}
 
+          {/* ── Error list ── */}
           {imageErrors.length > 0 && (
-            <div className="pt-4 space-y-2">
-              <p className="text-sm text-red-500 font-semibold">Failed Images:</p>
-              <ul className="text-xs text-zinc-400 max-h-32 overflow-y-auto space-y-1 border border-zinc-800 p-2 rounded">
+            <div className="space-y-3 pt-2 animate-fade-up">
+              <div className="flex items-center gap-2">
+                <span className="status-pill error">Failed</span>
+                <span className="text-xs text-[var(--color-text-muted)]">{imageErrors.length} image{imageErrors.length > 1 ? 's' : ''}</span>
+              </div>
+              <ul className="text-xs font-mono text-[var(--color-text-muted)] max-h-28 overflow-y-auto space-y-1 bg-[var(--color-surface)] border border-[var(--color-border-subtle)] p-3 rounded-lg">
                 {imageErrors.map((errFile, idx) => (
-                  <li key={idx}>Failed: {errFile.name || errFile.id || 'Unknown'}</li>
+                  <li key={idx} className="flex items-center gap-2">
+                    <span className="w-1 h-1 rounded-full bg-[oklch(0.65_0.22_27)] flex-shrink-0" />
+                    {errFile.name || errFile.id || 'Unknown'}
+                  </li>
                 ))}
               </ul>
               <Button
                 variant="outline"
                 size="sm"
-                className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border-zinc-700"
+                className="w-full sheen bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)] text-[var(--color-text-secondary)] border-[var(--color-border)]"
                 onClick={handleRetryImages}
                 disabled={isProcessing}
               >
@@ -600,80 +725,114 @@ export default function Home() {
             </div>
           )}
 
-        </CardContent>
-        <CardFooter className="flex flex-col gap-4">
-          <div className="flex w-full space-x-2">
+          {/* ── Action buttons ── */}
+          <div className="flex gap-3 pt-2">
             <Button
-              className="flex-1 hover:bg-zinc-200"
+              className="flex-1 h-10 sheen glow-accent text-sm font-semibold tracking-wide"
               disabled={!sourceId || !destId || isProcessing}
               onClick={handleStartProcessing}
             >
-              {isProcessing ? 'Processing...' : 'Start Job'}
+              {isProcessing ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Processing…
+                </span>
+              ) : 'Start Job'}
             </Button>
             <Button
               variant="outline"
-              className="bg-zinc-800 text-zinc-300 border-zinc-700 hover:bg-zinc-700"
+              className="sheen bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:bg-[var(--color-surface-3)] h-10"
               disabled={!destId || isProcessing || isUndoing}
               onClick={handleUndo}
             >
-              {isUndoing ? 'Undoing...' : 'Undo (Clear Dest)'}
+              {isUndoing ? 'Undoing…' : 'Undo'}
             </Button>
           </div>
 
-          {/* Instructions note */}
-          <p className="text-xs text-zinc-500 text-center mt-4">
-            Make sure your &apos;watermark.png&apos; file exists in the correct local directory as per the plan. Let&apos;s process batches!
+          {/* Tip */}
+          <p className="text-[10px] text-[var(--color-text-muted)] text-center leading-relaxed pt-1">
+            Place <code className="font-mono px-1 py-0.5 rounded bg-[var(--color-surface-2)] text-[oklch(0.82_0.155_72/80%)]">watermark.png</code> in the project&apos;s public directory.
           </p>
-        </CardFooter>
-      </Card>
+        </div>
+      </section>
 
-      {/* Video Processing Placeholder Panel */}
-      <Card className="w-full max-w-2xl bg-zinc-900 border-zinc-800 mt-6">
-        <CardHeader>
-          <div className="flex justify-between items-center">
-            <div>
-              <CardTitle className="text-xl text-zinc-100">Discovered Videos</CardTitle>
-              <CardDescription className="text-zinc-400">Queue of videos awaiting FFmpeg routing.</CardDescription>
+      {/* ══════════════ VIDEO PROCESSING PANEL ══════════════ */}
+      <section className="card-panel accent-top w-full max-w-2xl animate-fade-up-delay-2">
+        <div className="relative z-10 p-6 md:p-8 space-y-5">
+
+          {/* Section header */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-[oklch(0.55_0.15_250/12%)] border border-[oklch(0.55_0.15_250/25%)] flex items-center justify-center flex-shrink-0">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.65 0.12 250)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="23 7 16 12 23 17 23 7" />
+                  <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">
+                  Video Processing
+                </h2>
+                <p className="text-xs text-[var(--color-text-muted)]">FFmpeg pipeline • {videoQueue.length} in queue</p>
+              </div>
             </div>
             <Button
               variant="outline"
-              className="bg-zinc-800 text-zinc-200 border-zinc-700 hover:bg-zinc-700"
+              size="sm"
+              className="sheen bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:bg-[var(--color-surface-3)]"
               onClick={handleScanVideos}
               disabled={!sourceId || isScanningVideos}
             >
-              {isScanningVideos ? 'Scanning...' : 'Scan Source for Videos'}
+              {isScanningVideos ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Scanning
+                </span>
+              ) : 'Scan Source'}
             </Button>
           </div>
-        </CardHeader>
-        <CardContent>
+
+          {/* Video queue */}
           {videoQueue.length === 0 ? (
-            <p className="text-sm text-zinc-500 text-center py-4">No pending videos in local persistent queue.</p>
+            <div className="py-8 flex flex-col items-center gap-2 text-[var(--color-text-muted)]">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="opacity-30">
+                <polygon points="23 7 16 12 23 17 23 7" />
+                <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+              </svg>
+              <p className="text-sm">No pending videos in queue</p>
+              <p className="text-xs opacity-60">Scan a source folder to discover videos</p>
+            </div>
           ) : (
             <>
-              <ul className="divide-y divide-zinc-800 max-h-60 overflow-y-auto pr-2">
+              <ul className="divide-y divide-[var(--color-border-subtle)] max-h-56 overflow-y-auto pr-1 -mx-1 px-1">
                 {videoQueue.map((v) => (
-                  <li key={v.id} className="py-2 flex justify-between items-center">
-                    <span className="text-sm text-zinc-300 truncate max-w-[80%]">{v.name}</span>
-                    <span className="text-xs px-2 py-1 bg-zinc-800 text-zinc-400 rounded-full">Pending</span>
+                  <li key={v.id} className="py-2.5 flex justify-between items-center group">
+                    <span className="text-sm text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] truncate max-w-[75%] transition-colors font-mono text-xs">
+                      {v.name}
+                    </span>
+                    <span className="status-pill pending">Pending</span>
                   </li>
                 ))}
               </ul>
 
+              {/* Video progress */}
               {isVideoProcessing && (
-                <div className="space-y-2 pt-4">
-                  <div className="flex justify-between text-sm text-zinc-400">
-                    <span>Total Queue Progress</span>
-                    <span>{videoProgress}%</span>
+                <div className="space-y-3 pt-2 animate-fade-up">
+                  <div className="flex justify-between items-baseline">
+                    <span className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Queue Progress</span>
+                    <span className="text-sm font-mono font-medium text-[oklch(0.82_0.155_72)]">{videoProgress}%</span>
                   </div>
-                  <Progress value={videoProgress} className="h-2 bg-zinc-700" />
-                  <div className="flex justify-between text-xs text-zinc-500">
-                    <span>{videoStatusText}</span>
-                    <span>{videoEtaText}</span>
+                  <div className="progress-glow">
+                    <Progress value={videoProgress} />
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-mono text-[var(--color-text-muted)]">{videoStatusText}</span>
+                    <span className="text-xs font-mono text-[oklch(0.82_0.155_72/80%)]">{videoEtaText}</span>
                   </div>
                   <Button
                     variant="destructive"
                     size="sm"
-                    className="w-full mt-2"
+                    className="w-full mt-1"
                     onClick={handleCancelVideoJob}
                   >
                     Stop Job
@@ -683,29 +842,48 @@ export default function Home() {
             </>
           )}
 
+          {/* Video errors */}
           {videoErrors.length > 0 && (
-            <div className="pt-4 space-y-2">
-              <p className="text-sm text-red-500 font-semibold">Failed Videos:</p>
-              <ul className="text-xs text-zinc-400 max-h-32 overflow-y-auto space-y-1 border border-zinc-800 p-2 rounded">
+            <div className="space-y-3 pt-2 animate-fade-up">
+              <div className="flex items-center gap-2">
+                <span className="status-pill error">Failed</span>
+                <span className="text-xs text-[var(--color-text-muted)]">{videoErrors.length} video{videoErrors.length > 1 ? 's' : ''}</span>
+              </div>
+              <ul className="text-xs font-mono text-[var(--color-text-muted)] max-h-28 overflow-y-auto space-y-1 bg-[var(--color-surface)] border border-[var(--color-border-subtle)] p-3 rounded-lg">
                 {videoErrors.map((errName, idx) => (
-                  <li key={idx}>Failed: {errName}</li>
+                  <li key={idx} className="flex items-center gap-2">
+                    <span className="w-1 h-1 rounded-full bg-[oklch(0.65_0.22_27)] flex-shrink-0" />
+                    {errName}
+                  </li>
                 ))}
               </ul>
             </div>
           )}
-        </CardContent>
-        {videoQueue.length > 0 && (
-          <CardFooter>
+
+          {/* Process button */}
+          {videoQueue.length > 0 && (
             <Button
               onClick={handleProcessVideos}
               disabled={!destId || isVideoProcessing || isProcessing}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold tracking-wide"
+              className="w-full h-10 sheen text-sm font-semibold tracking-wide bg-[oklch(0.55_0.15_250)] hover:bg-[oklch(0.50_0.15_250)] text-white"
             >
-              {isVideoProcessing ? 'Executing FFmpeg Build...' : `Process ${videoQueue.length} Videos`}
+              {isVideoProcessing ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Executing FFmpeg Build…
+                </span>
+              ) : `Process ${videoQueue.length} Video${videoQueue.length > 1 ? 's' : ''}`}
             </Button>
-          </CardFooter>
-        )}
-      </Card>
+          )}
+        </div>
+      </section>
+
+      {/* Footer signature */}
+      <footer className="w-full max-w-2xl text-center py-4">
+        <p className="text-[10px] text-[var(--color-text-muted)] opacity-50 tracking-widest uppercase">
+          BOMIS Industrial Tools
+        </p>
+      </footer>
     </div>
   );
 }

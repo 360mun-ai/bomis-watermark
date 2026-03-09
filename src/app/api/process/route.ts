@@ -10,7 +10,8 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { sourceId, destId, applyTrim, specificFiles } = body;
+        const { sourceId, destId, applyTrim, specificFiles, concurrency: rawConcurrency } = body;
+        const concurrency = Math.min(200, Math.max(1, Number(rawConcurrency) || 50));
 
         if ((!sourceId && (!specificFiles || specificFiles.length === 0)) || !destId) {
             return new Response('Missing sourceId or specificFiles, or destId', { status: 400 });
@@ -50,9 +51,8 @@ export async function POST(request: NextRequest) {
                         progress: 0
                     });
 
-                    // 2. Set up concurrency pool
-                    // Process up to 50 images simultaneously to maximize speed
-                    const limit = pLimit(50);
+                    // 2. Set up concurrency pool (user-configurable)
+                    const limit = pLimit(concurrency);
                     let processedCount = 0;
                     let errorFiles: any[] = [];
 
